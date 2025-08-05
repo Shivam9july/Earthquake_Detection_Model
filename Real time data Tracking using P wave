@@ -1,0 +1,106 @@
+import time
+import numpy as np
+from obspy import UTCDateTime
+from obspy.clients.fdsn import Client
+from obspy.core import Stream
+from tensorflow.keras.models import load_model
+from joblib import load
+from datetime import datetime
+
+# Load model and scaler
+model = load_model("D:/pwave detector/models/pwave_cnn_model.keras")
+scaler = load("D:/pwave detector/models/pwave_scaler.pkl")
+
+# Expanded station list (for better redundancy)
+ALL_STATIONS = [
+    {"network": "IU", "station": "ANMO", "location": "00", "channel": "BHZ", "provider": "IRIS"},
+    {"network": "IU", "station": "COLA", "location": "00", "channel": "BHZ", "provider": "IRIS"},
+    {"network": "II", "station": "KURK", "location": "00", "channel": "BHZ", "provider": "IRIS"},
+    {"network": "GE", "station": "AQU", "location": "", "channel": "BHZ", "provider": "GFZ"},
+    {"network": "GFZ", "station": "RER", "location": "", "channel": "BHZ", "provider": "GFZ"},
+    {"network": "AM", "station": "RC144", "location": "--", "channel": "EHZ", "provider": "RASPISHAKE"},
+    {"network": "G", "station": "BFO", "location": "", "channel": "BHZ", "provider": "GFZ"},
+]
+
+FETCH_SECONDS = 3
+SLEEP_SECONDS = 10
+SAMPLES_PER_SECOND = 100
+
+def fetch_data(station_info, verbose=False):
+    try:
+        client = Client(station_info["provider"])
+        end_time = UTCDateTime.now()
+        start_time = end_time - FETCH_SECONDS
+        st: Stream = client.get_waveforms(
+            network=station_info["network"],
+            station=station_info["station"],
+            location=station_info["location"],
+            channel=station_info["channel"],
+            starttime=start_time,
+            endtime=end_time,
+            attach_response=False,
+        )
+        return st
+    except Exception as e:
+        if verbose:
+            print(f"⚠ {station_info['provider']}:{station_info['station']} failed to fetch data. Error: {e}")
+        return None
+
+def preprocess_data(stream):
+    stream.detrend("demean")
+    stream.filter("bandpass", freqmin=1.0, freqmax=20.0)
+    data = stream[0].data.astype(np.float32)
+    if len(data) < FETCH_SECONDS * SAMPLES_PER_SECOND:
+        return None
+    data = data[:FETCH_SECONDS * SAMPLES_PER_SECOND]
+    data = scaler.transform(data.reshape(1, -1))
+    return data.reshape(FETCH_SECONDS * SAMPLES_PER_SECOND, 1)
+
+def detect_p_wave(X):
+    X = X.reshape(1, X.shape[0], 1)
+    prediction = model.predict(X, verbose=0)[0][0]
+    return float(prediction)
+
+# ---------- PRECHECK ----------
+print("🔎 Running station availability precheck...")
+working_stations = []
+
+for station in ALL_STATIONS:
+    if fetch_data(station, verbose=True) is not None:
+        working_stations.append(station)
+        print(f"✅ {station['provider']}:{station['station']} is available.")
+    else:
+        print(f"❌ {station['provider']}:{station['station']} is unavailable.")
+
+# If no working stations found, fallback to all
+if not working_stations:
+    print("⚠ No stations passed precheck. Falling back to trying all stations every cycle.\n")
+    working_stations = ALL_STATIONS
+else:
+    print("✅ Using working stations only.\n")
+
+# ---------- MAIN LOOP ----------
+print("🔍 Real-time P-wave detection started...\n")
+
+while True:
+    for station in working_stations:
+        stream = fetch_data(station)
+        if stream is None:
+            continue
+
+        X = preprocess_data(stream)
+        if X is None:
+            print("⚠ Not enough data to preprocess. Skipping this round.")
+            continue
+
+        confidence = detect_p_wave(X)
+        now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+        if confidence > 0.5:
+            print(f"🚨 P-wave precursor detected at {now} with confidence {confidence:.2f}")
+        else:
+            print(f"✅ No precursor detected at {now}. Confidence: {confidence:.2f}")
+        break  # Exit loop after successful detection
+    else:
+        print("❌ All stations failed this round. Will retry after delay.")
+
+    time.sleep(SLEEP_SECONDS)
