@@ -1,0 +1,77 @@
+from obspy import read
+import numpy as np
+import os
+
+print("🔍 Script started")
+
+# === Load the waveform ===
+file_path = r"D:\pwave detector\waveforms\C.GO05..BHZ.2023-03-30.mseed"
+st = read(file_path)
+tr = st[0]
+data = tr.data
+sampling_rate = tr.stats.sampling_rate  # e.g., 40 Hz
+
+# === Settings ===
+window_seconds = 3
+window_size = int(sampling_rate * window_seconds)  # e.g., 3 * 40 = 120 samples
+step_size = window_size  # No overlap
+total_samples = len(data)
+
+# === P-wave region: label = 1 ===
+p_wave_start = 92  # seconds
+p_wave_end = 120   # seconds
+
+X = []
+y = []
+
+# === Print diagnostics ===
+print("✅ Loaded waveform:")
+print(f"- Total samples: {total_samples}")
+print(f"- Sampling rate: {sampling_rate}")
+print(f"- Window size (samples): {window_size}")
+print(f"- Total duration (sec): {total_samples / sampling_rate:.2f}")
+
+# === Check if the waveform is long enough ===
+if total_samples < window_size:
+    print("⚠ Waveform too short for even one 3-second window.")
+else:
+    print("✅ Proceeding to segmentation...")
+
+    for start_idx in range(0, total_samples - window_size + 1, step_size):
+        end_idx = start_idx + window_size
+        segment = data[start_idx:end_idx]
+
+        # Segment time (in seconds)
+        start_time = start_idx / sampling_rate
+        end_time = end_idx / sampling_rate
+
+        # Label assignment
+        if end_time < p_wave_start:
+            label = 0
+        elif start_time > p_wave_end:
+            label = 0
+        else:
+            label = 1
+
+        X.append(segment)
+        y.append(label)
+
+    X = np.array(X)
+    y = np.array(y)
+
+    print(f"✅ Segmentation complete.")
+    print(f"- X shape: {X.shape}")
+    print(f"- y shape: {y.shape}")
+    if len(y) > 0:
+        print(f"- Label counts: {np.bincount(y)}")
+    else:
+        print("⚠ No labeled segments generated.")
+
+    # === Save data ===
+    if len(y) > 0:
+        os.makedirs("dataset", exist_ok=True)
+        np.save("dataset/X.npy", X)
+        np.save("dataset/y.npy", y)
+        print("✅ Saved X.npy and y.npy to dataset/")
+    else:
+        print("❌ No data saved. Try adjusting P-wave window or check waveform.")
