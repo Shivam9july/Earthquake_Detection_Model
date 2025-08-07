@@ -14,7 +14,8 @@ Identifies and flags P-wave and possible precursor activity in real-time.
 P-Waves, S-Waves & Precursors
 P-waves: The first seismic waves in an earthquake. They are compressional and travel fastest through the Earth's crust.
 
-S-waves: Secondary waves, arriving after P-waves. They are slower but usually more destructive.
+S-waves: Secondary waves, arriving after P-waves. <img width="1920" height="1080" alt="Screenshot 2025-08-07 235356" src="https://github.com/user-attachments/assets/e15417b4-3be1-47d1-a32d-63de382af9cf" />
+They are slower but usually more destructive.
 
 Precursors: Signs or signals before an earthquake, potentially indicating imminent seismic activity. These may include:
 
@@ -55,6 +56,7 @@ python tremorwatch.py --config config.yaml
 Customize sensor endpoints and detection thresholds in the configuration.
 
 View logs for real-time alerts or integrate with notification systems.
+<img width="1920" height="1080" alt="Screenshot 2025-08-07 235314" src="https://github.com/user-attachments/assets/6325bfa0-e4ab-45c0-b5a6-4e43127119c0" />
 
 License
 This project is licensed under the MIT License.
